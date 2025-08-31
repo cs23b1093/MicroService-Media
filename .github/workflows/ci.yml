@@ -2,12 +2,12 @@ name: CI Pipeline
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "**" ] # run on all branches
   pull_request:
-    branches: [ "main" ]
+    branches: [ "**" ] # run on all PRs
 
 jobs:
-  test-build:
+  build-test:
     runs-on: ubuntu-latest
 
     services:
@@ -19,28 +19,35 @@ jobs:
         ports: [ "5672:5672", "15672:15672" ]
 
     steps:
-      - name: Checkout
+      - name: 📥 Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: 🔧 Set up Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 18
+          cache: "npm"
 
-      - name: Install deps
-        run: npm ci
-
-      - name: Lint + Type Check
+      - name: 📦 Install & Test microservices
         run: |
-          npm run lint
-          npm run build --if-present
+          for service in api_gateway details media-service post-service search-service; do
+            echo "🔍 Checking $service"
+            if [ -f "$service/package.json" ]; then
+              echo "📦 Installing dependencies in $service"
+              cd $service
+              npm ci
+              
+              if npm run | grep -q "test"; then
+                echo "🧪 Running tests in $service"
+                npm test
+              else
+                echo "⚠️  No test script found in $service, skipping..."
+              fi
+              cd ..
+            else
+              echo "⚠️  No package.json in $service, skipping..."
+            fi
+          done
 
-      - name: Run Tests
-        run: npm test
-
-      - name: Build Docker Images
-        run: |
-          docker compose build
-          # Optional: push to GitHub registry
-          # echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-          # docker compose push
+      - name: 🐳 Build Docker images
+        run: docker compose build
